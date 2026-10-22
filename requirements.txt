@@ -1,0 +1,15 @@
+
+fastapi
+uvicorn[standard]
+sqlalchemy
+alembic
+psycopg[binary]
+pgvector
+python-dotenv
+python-multipart
+PyJWT
+pwdlib[argon2]
+sentence-transformers
+groq
+pytest
+email-validator
