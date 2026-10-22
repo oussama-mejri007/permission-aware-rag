@@ -20,20 +20,55 @@ def test_role_based_access():
     finally:
         db.close()
 
-def test_audit_log_record_authorized_search():
+
+def test_audit_log_record_authorized_search(monkeypatch):
+    from app import rag
+
     db = SessionLocal()
     try:
-        log= (
+        before_count = (
             db.query(AuditLog)
             .filter(
-                AuditLog.tenant_id==2,
+                AuditLog.tenant_id == 2,
+                AuditLog.user_id == None,
                 AuditLog.role == "employee",
-                AuditLog.status== "no_authorized_chunks",
-                AuditLog.chunks_retrieved ==0,
+                AuditLog.event_type == "rag_query",
+                AuditLog.status == "no_authorized_chunks",
+                AuditLog.chunks_retrieved == 0,
             )
-            .first()
+            .count()
         )
-        assert log is not None
+    finally:
+        db.close()
+
+    monkeypatch.setattr(rag, "create_embedding", lambda question: [0.0] * 384)
+    monkeypatch.setattr(rag, "search_authorized_chunks", lambda **kwargs: [])
+
+    answer = rag.ask_question(
+        question="Test audit",
+        tenant_id=2,
+        role="employee",
+        user_id=None,
+    )
+
+    assert answer == "i don't have enough authorized information to answer"
+
+    db = SessionLocal()
+    try:
+        after_count = (
+            db.query(AuditLog)
+            .filter(
+                AuditLog.tenant_id == 2,
+                AuditLog.user_id == None,
+                AuditLog.role == "employee",
+                AuditLog.event_type == "rag_query",
+                AuditLog.status == "no_authorized_chunks",
+                AuditLog.chunks_retrieved == 0,
+            )
+            .count()
+        )
+
+        assert after_count == before_count + 1
     finally:
         db.close()
 def test_company_a_cannot_retrieve_company_b_documents():
