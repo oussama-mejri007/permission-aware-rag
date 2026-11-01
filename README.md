@@ -1,39 +1,53 @@
 # Permission-Aware Multi-Tenant RAG
 
-A secure Retrieval-Augmented Generation (RAG) API built with FastAPI, PostgreSQL, and pgvector. The system retrieves document chunks according to tenant isolation and role-based access control before passing authorized context to a language model.
+A secure, multi-tenant Retrieval-Augmented Generation (RAG) API built with **FastAPI, PostgreSQL, pgvector, and Groq**.
+
+The application retrieves document chunks according to tenant isolation and role-based access control (RBAC) before passing authorized context to a language model.
+
+The core security principle is simple: **authorization must be enforced during database retrieval, before document content reaches the LLM.**
 
 ## Key Features
 
-- **Multi-tenant isolation:** separates documents belonging to different organizations.
-- **Role-based access control (RBAC):** restricts document retrieval according to user roles.
-- **JWT authentication:** protects API endpoints with bearer tokens.
-- **Vector search:** uses embeddings and PostgreSQL with pgvector to retrieve relevant document chunks.
-- **LLM integration:** generates answers using retrieved context.
-- **Audit logging:** records authorized retrieval activity.
-- **Automated tests:** covers retrieval permissions, tenant isolation, and audit logging.
+- **Multi-tenant isolation:** separates data belonging to different organizations.
+- **Role-based access control:** restricts document retrieval according to the authenticated user's role.
+- **JWT authentication:** protects API access with bearer tokens.
+- **Semantic search:** uses Sentence Transformers embeddings and PostgreSQL with pgvector.
+- **Permission-aware retrieval:** applies tenant and role restrictions in the database query.
+- **LLM integration:** generates answers using retrieved document context.
+- **Audit logging:** records RAG query outcomes and the number of retrieved chunks.
+- **Automated security tests:** checks tenant isolation, role restrictions, and audit-log creation.
 
 ## Tech Stack
 
-- Python
-- FastAPI and Uvicorn
-- PostgreSQL and pgvector
-- SQLAlchemy and Alembic
-- Sentence Transformers
-- Groq API
-- JWT authentication
-- Pytest
-- Docker Compose
+| Component | Technology |
+|---|---|
+| API | FastAPI |
+| ASGI server | Uvicorn |
+| Database | PostgreSQL |
+| Vector search | pgvector |
+| ORM and migrations | SQLAlchemy, Alembic |
+| Embeddings | Sentence Transformers |
+| Language model | Groq API |
+| Authentication | JWT |
+| Testing | Pytest |
+| Local infrastructure | Docker Compose |
 
 ## Architecture
 
-1. A user authenticates through the login endpoint.
-2. The API issues a signed JWT.
-3. The authenticated user's identity, tenant, and role are validated.
-4. The retrieval layer applies tenant and role restrictions to the database query.
-5. Only authorized document chunks are provided as context to the generation layer.
-6. Retrieval activity is recorded for auditing.
+The application follows this workflow:
 
-**Security principle:** access restrictions must be enforced during retrieval, before document content is sent to the language model. Client-supplied tenant IDs or roles must not be trusted as authorization evidence.
+1. A user authenticates through `POST /auth/login`.
+2. The API issues a signed JWT.
+3. The authenticated user's identity, tenant, and role determine their access permissions.
+4. The retrieval layer filters chunks by tenant and allowed role in the database query.
+5. Only authorized chunks are passed to the answer-generation layer.
+6. The application records the retrieval outcome in the audit log.
+
+### Security Design
+
+Tenant and role restrictions are enforced **before retrieved content is sent to the language model**.
+
+The application must not trust client-supplied tenant IDs or roles as evidence of authorization. Access decisions should be based on the authenticated user's server-side identity and permissions.
 
 ## Project Structure
 
@@ -51,8 +65,9 @@ permission-aware-rag/
 │   ├── main.py
 │   ├── rag.py
 │   └── seed.py
-├── data/
 ├── tests/
+│   ├── test_retrieval.py
+│   └── test_security.py
 ├── docker-compose.yml
 ├── requirements.txt
 └── README.md
@@ -60,47 +75,68 @@ permission-aware-rag/
 
 ## Prerequisites
 
-- Python 3.11 or newer, compatible with the dependencies
+- Python compatible with the project's dependencies
 - Docker Desktop with Docker Compose
 - A Groq API key
-- A Hugging Face-compatible environment for embedding models if required
+- Git
 
-## Configuration
+## Local Setup
 
-Create a local `.env` file in the project root. Configure the database URL, JWT secret, and Groq API credentials using the variable names expected by the application.
+### 1. Clone the repository
 
-Do not commit `.env` or real credentials to version control. Use strong, unique secrets for any deployed environment.
+```powershell
+git clone https://github.com/oussama-mejri007/permission-aware-rag.git
+cd permission-aware-rag
+```
 
-## Setup
-
-Create and activate a virtual environment:
+### 2. Create and activate a virtual environment
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-Install dependencies:
+### 3. Install dependencies
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-Start PostgreSQL with pgvector:
+### 4. Configure environment variables
+
+Create a local `.env` file based on `.env.example` and configure the values required by your local environment.
+
+At minimum, verify the database connection and Groq API configuration. Use strong, unique credentials for local accounts and never commit real secrets.
+
+**Important:** `.env.example` contains placeholders. Replace them in your local `.env` file, not in the example file.
+
+### 5. Start PostgreSQL
+
+Start the PostgreSQL service defined in Docker Compose:
 
 ```powershell
 docker compose up -d postgres
 ```
 
-Apply database migrations if required by the current project setup:
+Confirm that the database is healthy before continuing.
+
+### 6. Apply database migrations
 
 ```powershell
 alembic upgrade head
 ```
 
-Initialize sample data using the project's seed procedure. Verify the required environment variables and database configuration before running it.
+### 7. Initialize sample data
+
+Run the project's seed procedure using the environment variables configured for your local setup.
+
+Ensure that the database schema exists and that the seed credentials are configured before running the seed procedure.
+
+If the database is empty, follow the project's data-ingestion and embedding workflow to populate documents and their vector embeddings.
 
 ## Run the API
+
+Start the development server:
 
 ```powershell
 uvicorn app.main:app --reload
@@ -108,19 +144,21 @@ uvicorn app.main:app --reload
 
 Open the interactive API documentation:
 
-- Swagger UI: http://127.0.0.1:8000/docs
+**Swagger UI:** http://127.0.0.1:8000/docs
 
-## API Workflow
+## API Usage
 
-### 1. Authenticate
+### Authenticate
 
-Send a form-encoded request to `POST /auth/login` using a seeded account's email as the username and its password.
+Send a form-encoded request to `POST /auth/login`.
 
-A successful response returns a bearer access token. Keep this token private.
+Use a seeded account's email as the username and its locally configured password.
 
-### 2. Ask a question
+A successful login returns a bearer access token. Keep this token private.
 
-Use `POST /rag/ask` with a JSON body:
+### Ask a question
+
+Send a `POST /rag/ask` request with a JSON body:
 
 ```json
 {
@@ -128,40 +166,54 @@ Use `POST /rag/ask` with a JSON body:
 }
 ```
 
-Include the bearer token in the `Authorization` header.
+Include the access token in the request's `Authorization` header:
 
-The answer depends on the documents available to the authenticated user and the relevance of the retrieved context.
+```text
+Authorization: Bearer <access_token>
+```
+
+The answer depends on the documents that the authenticated user is authorized to access and the relevance of the retrieved context.
+
+If no authorized chunks are available, the application returns a fallback response instead of generating an answer from unauthorized content.
 
 ## Security and Testing
 
-The test suite covers:
+The automated test suite covers:
 
-- Company administrator retrieval
+- Administrator retrieval
 - Finance-role retrieval
 - Retrieval for a second tenant's administrator
 - Tenant isolation
-- Cross-tenant data leakage prevention
+- Cross-tenant data-leakage prevention
 - Role-based access control
-- Audit logging for authorized searches
+- Audit-log creation when no authorized chunks are available
 
-Run the tests:
+Run all tests with:
 
 ```powershell
 python -m pytest -v
 ```
 
-**Recorded development result:** 7 tests passed. Re-run the suite after making changes and before publishing.
+**Latest recorded result: 8 tests passed.**
+
+Run the tests again after code changes and before publishing updates.
 
 ## Limitations and Future Improvements
 
-- Expand tests for unauthorized requests, expired tokens, and missing credentials.
-- Add document-ingestion validation and more retrieval-quality tests.
-- Improve observability and audit-log review.
-- Add deployment guidance, rate limiting, and production secret management.
-- Evaluate retrieval quality and answer grounding with a representative dataset.
+Potential next steps include:
+
+- Add tests for missing, invalid, and expired JWTs.
+- Test unauthorized API requests and authentication failures.
+- Expand audit-log assertions and monitoring.
+- Add document-ingestion validation and retrieval-quality evaluations.
+- Improve API error handling and observability.
+- Add rate limiting and production deployment guidance.
+- Evaluate answer grounding and resistance to prompt injection.
 
 ## Security Notice
 
-This repository is a development project. Review authentication, authorization, configuration, dependency versions, and deployment settings before exposing it to untrusted users.
+This repository is a development project and should be reviewed before production deployment.
 
 Never commit API keys, JWTs, passwords, database credentials, private documents, or production data.
+
+Review authentication, authorization, database configuration, dependency versions, logging, and deployment settings before exposing the API to untrusted users.
