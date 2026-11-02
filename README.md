@@ -194,7 +194,7 @@ Run all tests with:
 python -m pytest -v
 ```
 
-**Latest recorded result: 8 tests passed.**
+**Latest recorded result: 17 tests passed.**
 
 Run the tests again after code changes and before publishing updates.
 

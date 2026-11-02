@@ -153,3 +153,11 @@ def test_token_with_boolean_tenant_id_is_rejected(jwt_secret):
         get_current_user(token=token)
 
     assert exc_info.value.status_code == 401
+
+def test_malformed_token_is_rejected(jwt_secret):
+    malformed_token = "this-is-not-a-valid-jwt"
+
+    with pytest.raises(HTTPException) as exc_info:
+        get_current_user(token=malformed_token)
+
+    assert exc_info.value.status_code == 401
