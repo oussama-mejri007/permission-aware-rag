@@ -154,3 +154,23 @@ def test_token_with_invalid_tenant_id_is_rejected(monkeypatch):
         get_current_user(token=token)
 
     assert exc_info.value.status_code == 401
+
+def test_token_with_boolean_tenant_id_is_rejected(monkeypatch):
+    secret = "test-secret-key-for-jwt-tests-32-bytes-minimum"
+    monkeypatch.setenv("JWT_SECRET_KEY", secret)
+
+    token = jwt.encode(
+        {
+            "sub": "1",
+            "tenant_id": True,
+            "role": "admin",
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
+        },
+        secret,
+        algorithm="HS256",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        get_current_user(token=token)
+
+    assert exc_info.value.status_code == 401
