@@ -43,7 +43,7 @@ def get_authenticated_user(
     ):
         raise HTTPException(
             status_code = status.HTTP_401_UNAUTHORIZED,
-            setail = "User authentication is no longer valid",
+            detail = "User authentication is no longer valid",
             headers = {"WWW-Authenticate" : "Bearer"},
         )
     return user

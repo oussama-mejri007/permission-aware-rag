@@ -13,3 +13,4 @@ sentence-transformers
 groq
 pytest
 email-validator
+httpx
