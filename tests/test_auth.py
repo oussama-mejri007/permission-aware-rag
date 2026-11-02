@@ -94,11 +94,11 @@ def test_token_without_tenant_id_is_rejected(monkeypatch):
         get_current_user(token=token)
 
     assert exc_info.value.status_code == 401
+
+
 def test_token_without_role_is_rejected(monkeypatch):
-    monkeypatch.setenv(
-        "JWT_SECRET_KEY",
-        "test-secret-key-for-jwt-tests-32-bytes-minimum",
-    )
+    secret = "test-secret-key-for-jwt-tests-32-bytes-minimum"
+    monkeypatch.setenv("JWT_SECRET_KEY", secret)
 
     token = jwt.encode(
         {
@@ -106,12 +106,31 @@ def test_token_without_role_is_rejected(monkeypatch):
             "tenant_id": 1,
             "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
         },
-        "test-secret-key-for-jwt-tests-32-bytes-minimum",
+        secret,
         algorithm="HS256",
     )
 
-    try:
+    with pytest.raises(HTTPException) as exc_info:
         get_current_user(token=token)
-        assert False, "Token without role should be rejected"
-    except HTTPException as exc:
-        assert exc.status_code == 401
+
+    assert exc_info.value.status_code == 401
+
+def test_token_with_invalid_user_id_is_rejected(monkeypatch):
+    secret = "test-secret-key-for-jwt-tests-32-bytes-minimum"
+    monkeypatch.setenv("JWT_SECRET_KEY", secret)
+
+    token = jwt.encode(
+        {
+            "sub": "abc",
+            "tenant_id": 1,
+            "role": "admin",
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
+        },
+        secret,
+        algorithm="HS256",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        get_current_user(token=token)
+
+    assert exc_info.value.status_code == 401
