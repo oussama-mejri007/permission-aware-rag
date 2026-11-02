@@ -11,10 +11,14 @@ from app.auth import (
     get_current_user,
 )
 
+@pytest.fixture
+def jwt_secret(monkeypatch):
+    secret = "test-secret-key-for-jwt-tests-32-bytes-minimum"
+    monkeypatch.setenv("JWT_SECRET_KEY", secret)
+    return secret
 
-def test_create_and_decode_valid_token(monkeypatch):
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-for-jwt-tests-32-bytes-minimum")
 
+def test_create_and_decode_valid_token(jwt_secret):
     token = create_access_token(
         user_id=1,
         tenant_id=1,
@@ -28,12 +32,7 @@ def test_create_and_decode_valid_token(monkeypatch):
     assert payload["role"] == "admin"
 
 
-def test_expired_token_is_rejected(monkeypatch):
-    monkeypatch.setenv(
-        "JWT_SECRET_KEY",
-        "test-secret-key-for-jwt-tests-32-bytes-minimum",
-    )
-
+def test_expired_token_is_rejected(jwt_secret):
     payload = {
         "sub": "1",
         "tenant_id": 1,
@@ -43,7 +42,7 @@ def test_expired_token_is_rejected(monkeypatch):
 
     token = jwt.encode(
         payload,
-        "test-secret-key-for-jwt-tests-32-bytes-minimum",
+        jwt_secret,
         algorithm="HS256",
     )
 
@@ -53,12 +52,7 @@ def test_expired_token_is_rejected(monkeypatch):
     assert exc_info.value.status_code == 401
 
 
-def test_invalid_signature_is_rejected(monkeypatch):
-    monkeypatch.setenv(
-        "JWT_SECRET_KEY",
-        "test-secret-key-for-jwt-tests-32-bytes-minimum",
-    )
-
+def test_invalid_signature_is_rejected(jwt_secret):
     token = jwt.encode(
         {
             "sub": "1",
@@ -76,17 +70,14 @@ def test_invalid_signature_is_rejected(monkeypatch):
     assert exc_info.value.status_code == 401
 
 
-def test_token_without_tenant_id_is_rejected(monkeypatch):
-    secret = "test-secret-key-for-jwt-tests-32-bytes-minimum"
-    monkeypatch.setenv("JWT_SECRET_KEY", secret)
-
+def test_token_without_tenant_id_is_rejected(jwt_secret):
     token = jwt.encode(
         {
             "sub": "1",
             "role": "admin",
             "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
         },
-        secret,
+        jwt_secret,
         algorithm="HS256",
     )
 
@@ -96,17 +87,14 @@ def test_token_without_tenant_id_is_rejected(monkeypatch):
     assert exc_info.value.status_code == 401
 
 
-def test_token_without_role_is_rejected(monkeypatch):
-    secret = "test-secret-key-for-jwt-tests-32-bytes-minimum"
-    monkeypatch.setenv("JWT_SECRET_KEY", secret)
-
+def test_token_without_role_is_rejected(jwt_secret):
     token = jwt.encode(
         {
             "sub": "1",
             "tenant_id": 1,
             "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
         },
-        secret,
+        jwt_secret,
         algorithm="HS256",
     )
 
@@ -115,10 +103,7 @@ def test_token_without_role_is_rejected(monkeypatch):
 
     assert exc_info.value.status_code == 401
 
-def test_token_with_invalid_user_id_is_rejected(monkeypatch):
-    secret = "test-secret-key-for-jwt-tests-32-bytes-minimum"
-    monkeypatch.setenv("JWT_SECRET_KEY", secret)
-
+def test_token_with_invalid_user_id_is_rejected(jwt_secret):
     token = jwt.encode(
         {
             "sub": "abc",
@@ -126,7 +111,7 @@ def test_token_with_invalid_user_id_is_rejected(monkeypatch):
             "role": "admin",
             "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
         },
-        secret,
+        jwt_secret,
         algorithm="HS256",
     )
 
@@ -135,10 +120,7 @@ def test_token_with_invalid_user_id_is_rejected(monkeypatch):
 
     assert exc_info.value.status_code == 401
 
-def test_token_with_invalid_tenant_id_is_rejected(monkeypatch):
-    secret = "test-secret-key-for-jwt-tests-32-bytes-minimum"
-    monkeypatch.setenv("JWT_SECRET_KEY", secret)
-
+def test_token_with_invalid_tenant_id_is_rejected(jwt_secret):
     token = jwt.encode(
         {
             "sub": "1",
@@ -146,7 +128,7 @@ def test_token_with_invalid_tenant_id_is_rejected(monkeypatch):
             "role": "admin",
             "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
         },
-        secret,
+        jwt_secret,
         algorithm="HS256",
     )
 
@@ -155,10 +137,7 @@ def test_token_with_invalid_tenant_id_is_rejected(monkeypatch):
 
     assert exc_info.value.status_code == 401
 
-def test_token_with_boolean_tenant_id_is_rejected(monkeypatch):
-    secret = "test-secret-key-for-jwt-tests-32-bytes-minimum"
-    monkeypatch.setenv("JWT_SECRET_KEY", secret)
-
+def test_token_with_boolean_tenant_id_is_rejected(jwt_secret):
     token = jwt.encode(
         {
             "sub": "1",
@@ -166,7 +145,7 @@ def test_token_with_boolean_tenant_id_is_rejected(monkeypatch):
             "role": "admin",
             "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
         },
-        secret,
+        jwt_secret,
         algorithm="HS256",
     )
 
