@@ -45,9 +45,32 @@ The application follows this workflow:
 
 ### Security Design
 
-Tenant and role restrictions are enforced **before retrieved content is sent to the language model**.
+Tenant and role restrictions are enforced **at database retrieval time, before document content is sent to the language model**.
 
-The application must not trust client-supplied tenant IDs or roles as evidence of authorization. Access decisions should be based on the authenticated user's server-side identity and permissions.
+The retrieval query applies two authorization conditions:
+
+- **Tenant isolation:** `Chunk.tenant_id` must match the authenticated user's tenant ID.
+- **Role-based access:** the user's role must be included in the chunk's `allowed_roles` list.
+
+Conceptually, the query follows this rule:
+
+```python
+select(Chunk).where(
+    Chunk.tenant_id == tenant_id,
+    any_(Chunk.allowed_roles) == role,
+)
+```
+
+The `tenant_id` and `role` values must come from the authenticated user's verified identity, not from client-supplied request parameters.
+
+This ensures that:
+
+1. Users cannot retrieve chunks belonging to another tenant.
+2. Users cannot retrieve chunks whose allowed roles do not include their role.
+3. Unauthorized chunks are excluded before the LLM receives any context.
+4. If no authorized chunks are found, the application returns a fallback response.
+
+These database-level filters are a core security boundary of the application.
 
 ## Project Structure
 
