@@ -13,3 +13,12 @@ def test_rag_endpoint_rejects_missing_token():
     )
 
     assert response.status_code == 401
+
+def test_rag_endpoint_rejects_invalid_token():
+    response = client.post(
+        "/rag/ask",
+        json={"question": "What is the company revenue?"},
+        headers={"Authorization": "Bearer invalid-token"},
+    )
+
+    assert response.status_code == 401
