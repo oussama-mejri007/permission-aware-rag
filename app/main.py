@@ -32,20 +32,23 @@ class TokenResponse(BaseModel):
     token_type: str= "bearer"
 
 def get_authenticated_user(
-        token_user: dict = Depends(get_current_user),
-        db: Session = Depends(get_db),
+    token_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> User:
     user = db.get(User, token_user["user_id"])
+
     if (
         user is None
+        or not user.is_active
         or user.tenant_id != token_user["tenant_id"]
         or user.role != token_user["role"]
     ):
         raise HTTPException(
-            status_code = status.HTTP_401_UNAUTHORIZED,
-            detail = "User authentication is no longer valid",
-            headers = {"WWW-Authenticate" : "Bearer"},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User authentication is no longer valid",
+            headers={"WWW-Authenticate": "Bearer"},
         )
+
     return user
 
 

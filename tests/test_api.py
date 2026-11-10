@@ -46,3 +46,32 @@ def test_rag_endpoint_rejects_deleted_user():
         app.dependency_overrides.clear()
 
     assert response.status_code == 401
+
+def test_rag_endpoint_rejects_inactive_user():
+    class FakeUser:
+        id = 9999
+        tenant_id = 1
+        role = "admin"
+        is_active = False
+
+    class FakeDB:
+        def get(self, model, user_id):
+            return FakeUser()
+
+    app.dependency_overrides[get_current_user] = lambda: {
+        "user_id": 9999,
+        "tenant_id": 1,
+        "role": "admin",
+    }
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        response = client.post(
+            "/rag/ask",
+            json={"question": "What is the company revenue?"},
+            headers={"Authorization": "Bearer valid-test-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 401
