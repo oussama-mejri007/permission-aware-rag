@@ -218,6 +218,25 @@ def refresh_access_token(
         refresh_token=new_refresh_token,
     )
 
+@app.post("/auth/logout")
+def logout(
+    payload: RefreshRequest,
+    db: Session = Depends(get_db),
+):
+    token_hash = hash_refresh_token(payload.refresh_token)
+
+    db_token = db.scalar(
+        select(RefreshToken).where(
+            RefreshToken.token_hash == token_hash
+        )
+    )
+
+    if db_token is not None and db_token.revoked_at is None:
+        db_token.revoked_at = datetime.now(timezone.utc)
+        db.commit()
+
+    return {"message": "Logged out successfully"}
+
 @app.post("/rag/ask")
 def ask_rag(
     data: AskRequest,

@@ -791,3 +791,86 @@ def test_refresh_token_rejects_inactive_user(monkeypatch):
         app.dependency_overrides.clear()
 
     assert response.status_code == 401
+
+def test_logout_revokes_refresh_token(monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    from app.models.models import RefreshToken
+
+    valid_token = RefreshToken(
+        id=1,
+        user_id=20,
+        token_hash="old-hash",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        revoked_at=None,
+    )
+
+    class FakeDB:
+        committed = False
+
+        def scalar(self, query):
+            return valid_token
+
+        def commit(self):
+            self.committed = True
+
+    fake_db = FakeDB()
+
+    monkeypatch.setattr(
+        "app.main.hash_refresh_token",
+        lambda token: "old-hash",
+    )
+
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        response = client.post(
+            "/auth/logout",
+            json={"refresh_token": "old-refresh-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert valid_token.revoked_at is not None
+    assert fake_db.committed is True
+
+def test_logout_handles_already_revoked_token(monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    from app.models.models import RefreshToken
+
+    revoked_token = RefreshToken(
+        id=1,
+        user_id=20,
+        token_hash="old-hash",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        revoked_at=datetime.now(timezone.utc),
+    )
+
+    class FakeDB:
+        committed = False
+
+        def scalar(self, query):
+            return revoked_token
+
+        def commit(self):
+            self.committed = True
+
+    fake_db = FakeDB()
+
+    monkeypatch.setattr(
+        "app.main.hash_refresh_token",
+        lambda token: "old-hash",
+    )
+
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        response = client.post(
+            "/auth/logout",
+            json={"refresh_token": "old-refresh-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert fake_db.committed is False
