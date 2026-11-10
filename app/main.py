@@ -40,6 +40,8 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=12)
     role: str = Field(..., pattern="^(finance|employee)$")
+class UserUpdate(BaseModel):
+    is_active: bool
 
 
 def get_authenticated_user(
@@ -176,3 +178,36 @@ def create_user(
     db.refresh(new_user)
 
     return new_user
+
+@app.patch("/users/{user_id}", response_model=UserResponse)
+def update_user(
+    user_id: int,
+    data: UserUpdate,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    user = db.scalar(
+        select(User).where(
+            User.id == user_id,
+            User.tenant_id == current_user.tenant_id,
+        )
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    if user.role == "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot modify another admin",
+        )
+
+    user.is_active = data.is_active
+
+    db.commit()
+    db.refresh(user)
+
+    return user

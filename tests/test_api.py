@@ -284,3 +284,107 @@ def test_create_user_rejects_invalid_role_and_short_password():
 
     assert invalid_role.status_code == 422
     assert short_password.status_code == 422
+
+def test_admin_can_deactivate_user():
+    class FakeUser:
+        id = 20
+        tenant_id = 1
+        email = "employee@company-a.com"
+        role = "employee"
+        is_active = True
+
+    fake_user = FakeUser()
+
+    class FakeDB:
+        def scalar(self, query):
+            return fake_user
+
+        def commit(self):
+            assert fake_user.is_active is False
+
+        def refresh(self, user):
+            pass
+
+    admin = type(
+        "FakeAdmin",
+        (),
+        {"id": 10, "tenant_id": 1, "role": "admin", "is_active": True},
+    )()
+
+    app.dependency_overrides[get_admin_user] = lambda: admin
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        response = client.patch(
+            "/users/20",
+            json={"is_active": False},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["is_active"] is False
+
+def test_admin_cannot_update_user_from_another_tenant():
+    class FakeDB:
+        def scalar(self, query):
+            compiled = query.compile()
+            params = compiled.params
+
+            assert 1 in params.values()  # Tenant de l'admin
+            assert 20 in params.values()  # ID de l'utilisateur
+
+            return None
+
+    admin = type(
+        "FakeAdmin",
+        (),
+        {"id": 10, "tenant_id": 1, "role": "admin", "is_active": True},
+    )()
+
+    app.dependency_overrides[get_admin_user] = lambda: admin
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        response = client.patch(
+            "/users/20",
+            json={"is_active": False},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+
+def test_admin_cannot_update_another_admin():
+    class FakeUser:
+        id = 20
+        tenant_id = 1
+        email = "admin2@company-a.com"
+        role = "admin"
+        is_active = True
+
+    fake_user = FakeUser()
+
+    class FakeDB:
+        def scalar(self, query):
+            return fake_user
+
+    admin = type(
+        "FakeAdmin",
+        (),
+        {"id": 10, "tenant_id": 1, "role": "admin", "is_active": True},
+    )()
+
+    app.dependency_overrides[get_admin_user] = lambda: admin
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        response = client.patch(
+            "/users/20",
+            json={"is_active": False},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert fake_user.is_active is True
