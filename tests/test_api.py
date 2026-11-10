@@ -164,3 +164,123 @@ def test_admin_sees_only_users_from_own_tenant():
     assert len(response.json()) == 1
     assert response.json()[0]["email"] == "admin@company-a.com"
     assert "password_hash" not in response.json()[0]
+
+def test_admin_can_create_user(monkeypatch):
+    class FakeUser:
+        id = 20
+        tenant_id = 1
+        email = "newuser@company-a.com"
+        role = "employee"
+        is_active = True
+
+    class FakeDB:
+        def scalar(self, query):
+            return None
+
+        def add(self, user):
+            self.user = user
+            assert user.tenant_id == 1
+            assert user.email == "newuser@company-a.com"
+            assert user.role == "employee"
+            assert user.password_hash != "StrongPassword123!"
+
+        def commit(self):
+            pass
+
+        def refresh(self, user):
+            user.id = 20
+
+    admin = type(
+        "FakeAdmin",
+        (),
+        {"id": 10, "tenant_id": 1, "role": "admin", "is_active": True},
+    )()
+
+    fake_db = FakeDB()
+
+    monkeypatch.setattr(
+        "app.main.hash_password",
+        lambda password: "hashed-password",
+    )
+
+    app.dependency_overrides[get_admin_user] = lambda: admin
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        response = client.post(
+            "/users",
+            json={
+                "email": "newuser@company-a.com",
+                "password": "StrongPassword123!",
+                "role": "employee",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+    assert response.json()["id"] == 20
+    assert response.json()["email"] == "newuser@company-a.com"
+    assert response.json()["role"] == "employee"
+    assert "password_hash" not in response.json()
+
+def test_admin_cannot_create_user_with_existing_email():
+    class FakeDB:
+        def scalar(self, query):
+            return object()
+
+    admin = type(
+        "FakeAdmin",
+        (),
+        {"id": 10, "tenant_id": 1, "role": "admin", "is_active": True},
+    )()
+
+    app.dependency_overrides[get_admin_user] = lambda: admin
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        response = client.post(
+            "/users",
+            json={
+                "email": "existing@company-a.com",
+                "password": "StrongPassword123!",
+                "role": "employee",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+
+def test_create_user_rejects_invalid_role_and_short_password():
+    admin = type(
+        "FakeAdmin",
+        (),
+        {"id": 10, "tenant_id": 1, "role": "admin", "is_active": True},
+    )()
+
+    app.dependency_overrides[get_admin_user] = lambda: admin
+
+    try:
+        invalid_role = client.post(
+            "/users",
+            json={
+                "email": "user@company-a.com",
+                "password": "StrongPassword123!",
+                "role": "admin",
+            },
+        )
+
+        short_password = client.post(
+            "/users",
+            json={
+                "email": "user@company-a.com",
+                "password": "short",
+                "role": "employee",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert invalid_role.status_code == 422
+    assert short_password.status_code == 422

@@ -1,13 +1,14 @@
 from fastapi import Depends, FastAPI, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from app.auth import create_access_token, verify_password
+from app.auth import (create_access_token,verify_password,get_current_user,hash_password,)
 from app.database import SessionLocal, engine, create_tables
 from app.models.models import User
-from app.auth import create_access_token, verify_password, get_current_user
 from fastapi.security import OAuth2PasswordRequestForm
+
+ALLOWED_USER_ROLES = {"finance", "employee"}
 
 
 
@@ -35,6 +36,10 @@ class UserResponse(BaseModel):
     email: EmailStr
     role: str
     is_active: bool
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=12)
+    role: str = Field(..., pattern="^(finance|employee)$")
 
 
 def get_authenticated_user(
@@ -141,3 +146,33 @@ def list_users(
     ).all()
 
     return users
+
+@app.post("/users", response_model=UserResponse, status_code=201)
+def create_user(
+    data: UserCreate,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    existing_user = db.scalar(
+        select(User).where(User.email == data.email)
+    )
+
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
+
+    new_user = User(
+        tenant_id=current_user.tenant_id,
+        email=data.email,
+        password_hash=hash_password(data.password),
+        role=data.role,
+        is_active=True,
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return new_user

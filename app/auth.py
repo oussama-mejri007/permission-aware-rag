@@ -19,6 +19,8 @@ def get_jwt_secret() -> str:
     return secret
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return password_hash.verify(plain_password,hashed_password)
+def hash_password(plain_password: str) -> str:
+    return password_hash.hash(plain_password)
 def create_access_token( user_id: int, tenant_id: int, role: str )-> str:
     now = datetime.now(timezone.utc)
     payload = {
