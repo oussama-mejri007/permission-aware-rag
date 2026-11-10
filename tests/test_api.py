@@ -75,3 +75,35 @@ def test_rag_endpoint_rejects_inactive_user():
         app.dependency_overrides.clear()
 
     assert response.status_code == 401
+
+def test_login_rejects_inactive_user(monkeypatch):
+    from app.main import login
+    from app.main import OAuth2PasswordRequestForm
+
+    class FakeUser:
+        id = 9999
+        email = "inactive@example.com"
+        password_hash = "fake-hash"
+        is_active = False
+
+    class FakeDB:
+        def scalar(self, query):
+            return FakeUser()
+
+    monkeypatch.setattr(
+        "app.main.verify_password",
+        lambda password, password_hash: True,
+    )
+
+    form = OAuth2PasswordRequestForm(
+        username="inactive@example.com",
+        password="correct-password",
+    )
+
+    from fastapi import HTTPException
+
+    try:
+        login(form_data=form, db=FakeDB())
+        assert False, "Expected HTTPException"
+    except HTTPException as exc:
+        assert exc.status_code == 401

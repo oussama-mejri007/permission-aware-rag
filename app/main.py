@@ -31,6 +31,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str= "bearer"
 
+
 def get_authenticated_user(
     token_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -79,14 +80,16 @@ def login(
 
     if (
         user is None
+        or not user.is_active
         or not user.password_hash
         or not verify_password(form_data.password, user.password_hash)
-    ):
+        ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+        
 
     token = create_access_token(
         user_id=user.id,
