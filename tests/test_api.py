@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from h11 import Request
 
 from app.main import app
 from app.main import get_current_user, get_db
@@ -81,7 +82,18 @@ def test_rag_endpoint_rejects_inactive_user():
 def test_login_rejects_inactive_user(monkeypatch):
     from app.main import login
     from app.main import OAuth2PasswordRequestForm
+    from starlette.requests import Request
 
+    request = Request({
+    "type": "http",
+    "method": "POST",
+    "path": "/auth/login",
+    "headers": [],
+    "query_string": b"",
+    "server": ("testserver", 80),
+    "client": ("127.0.0.1", 50000),
+    "scheme": "http",
+    })
     class FakeUser:
         id = 9999
         email = "inactive@example.com"
@@ -105,7 +117,7 @@ def test_login_rejects_inactive_user(monkeypatch):
     from fastapi import HTTPException
 
     try:
-        login(form_data=form, db=FakeDB())
+        login(request=request, form_data=form, db=FakeDB())
         assert False, "Expected HTTPException"
     except HTTPException as exc:
         assert exc.status_code == 401
@@ -494,3 +506,27 @@ def test_admin_cannot_delete_another_admin():
         app.dependency_overrides.clear()
 
     assert response.status_code == 403
+
+def test_login_rate_limit(monkeypatch):
+    class FakeDB:
+        def scalar(self, query):
+            return None
+
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        responses = [
+            client.post(
+                "/auth/login",
+                data={
+                    "username": "unknown@example.com",
+                    "password": "wrong-password",
+                },
+            )
+            for _ in range(6)
+        ]
+    finally:
+        app.dependency_overrides.clear()
+
+    assert all(response.status_code == 401 for response in responses[:5])
+    assert responses[5].status_code == 429

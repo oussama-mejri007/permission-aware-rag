@@ -7,13 +7,22 @@ from app.auth import (create_access_token,verify_password,get_current_user,hash_
 from app.database import SessionLocal, engine, create_tables
 from app.models.models import User
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 ALLOWED_USER_ROLES = {"finance", "employee"}
 
 
-
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Permission-Aware Multi-Tenant RAG"
+)
+app.state.limiter = limiter
+app.add_exception_handler(
+    RateLimitExceeded,
+    _rate_limit_exceeded_handler,
 )
 
 create_tables()
@@ -93,10 +102,12 @@ def database_health_check():
     }
 
 @app.post("/auth/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
-):
+    ):
     user = db.scalar(
         select(User).where(User.email == form_data.username)
     )
@@ -121,6 +132,8 @@ def login(
     )
 
     return TokenResponse(access_token=token)
+
+
 @app.post("/rag/ask")
 def ask_rag(
     data: AskRequest,
