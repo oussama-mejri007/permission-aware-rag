@@ -388,3 +388,109 @@ def test_admin_cannot_update_another_admin():
 
     assert response.status_code == 403
     assert fake_user.is_active is True
+
+def test_admin_can_delete_user():
+    class FakeUser:
+        id = 20
+        tenant_id = 1
+        email = "employee@company-a.com"
+        role = "employee"
+        is_active = True
+
+    fake_user = FakeUser()
+
+    class FakeDB:
+        deleted_user = None
+
+        def scalar(self, query):
+            return fake_user
+
+        def delete(self, user):
+            self.deleted_user = user
+            assert user.id == 20
+
+        def commit(self):
+            assert self.deleted_user is fake_user
+
+    admin = type(
+        "FakeAdmin",
+        (),
+        {"id": 10, "tenant_id": 1, "role": "admin", "is_active": True},
+    )()
+
+    fake_db = FakeDB()
+
+    app.dependency_overrides[get_admin_user] = lambda: admin
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        response = client.delete("/users/20")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert fake_db.deleted_user is fake_user
+
+def test_admin_cannot_delete_user_from_another_tenant():
+    class FakeDB:
+        def scalar(self, query):
+            compiled = query.compile()
+            params = compiled.params
+
+            assert 1 in params.values()
+            assert 20 in params.values()
+
+            return None
+
+        def delete(self, user):
+            raise AssertionError("User should not be deleted")
+
+    admin = type(
+        "FakeAdmin",
+        (),
+        {"id": 10, "tenant_id": 1, "role": "admin", "is_active": True},
+    )()
+
+    app.dependency_overrides[get_admin_user] = lambda: admin
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        response = client.delete("/users/20")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+
+def test_admin_cannot_delete_another_admin():
+    class FakeUser:
+        id = 20
+        tenant_id = 1
+        email = "admin2@company-a.com"
+        role = "admin"
+        is_active = True
+
+    fake_user = FakeUser()
+
+    class FakeDB:
+        def scalar(self, query):
+            return fake_user
+
+        def delete(self, user):
+            raise AssertionError("Admin should not be deleted")
+
+    admin = type(
+        "FakeAdmin",
+        (),
+        {"id": 10, "tenant_id": 1, "role": "admin", "is_active": True},
+    )()
+
+    app.dependency_overrides[get_admin_user] = lambda: admin
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        response = client.delete("/users/20")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403

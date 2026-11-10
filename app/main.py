@@ -211,3 +211,33 @@ def update_user(
     db.refresh(user)
 
     return user
+
+@app.delete("/users/{user_id}", status_code=204)
+def delete_user(
+    user_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    user = db.scalar(
+        select(User).where(
+            User.id == user_id,
+            User.tenant_id == current_user.tenant_id,
+        )
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    if user.role == "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot delete another admin",
+        )
+
+    db.delete(user)
+    db.commit()
+
+    return None
