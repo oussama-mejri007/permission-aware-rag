@@ -10,6 +10,12 @@ from app.auth import (
     decode_access_token,
     get_current_user,
 )
+from app.auth import (
+    create_access_token,
+    decode_access_token,
+    get_current_user,
+    JWT_EXPIRE_MINUTES,
+)
 
 @pytest.fixture
 def jwt_secret(monkeypatch):
@@ -30,6 +36,23 @@ def test_create_and_decode_valid_token(jwt_secret):
     assert payload["sub"] == "1"
     assert payload["tenant_id"] == 1
     assert payload["role"] == "admin"
+
+def test_access_token_expires_after_configured_duration(jwt_secret):
+    token = create_access_token(
+        user_id=1,
+        tenant_id=1,
+        role="admin",
+    )
+
+    payload = decode_access_token(token)
+
+    issued_at = datetime.fromtimestamp(payload["iat"], timezone.utc)
+    expires_at = datetime.fromtimestamp(payload["exp"], timezone.utc)
+
+    duration = expires_at - issued_at
+
+    assert duration == timedelta(minutes=JWT_EXPIRE_MINUTES)
+    assert JWT_EXPIRE_MINUTES == 30
 
 
 def test_expired_token_is_rejected(jwt_secret):
