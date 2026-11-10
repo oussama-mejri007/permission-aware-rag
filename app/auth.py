@@ -5,11 +5,17 @@ import jwt
 from pwdlib import PasswordHash
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+import hashlib
+import secrets
+from datetime import timedelta
+from app.models.models import RefreshToken
+from sqlalchemy.orm import Session
 
 password_hash = PasswordHash.recommended()
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = 30
+REFRESH_TOKEN_EXPIRE_DAYS = 7
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 def get_jwt_secret() -> str:
@@ -21,6 +27,27 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return password_hash.verify(plain_password,hashed_password)
 def hash_password(plain_password: str) -> str:
     return password_hash.hash(plain_password)
+def create_refresh_token() -> str:
+    return secrets.token_urlsafe(64)
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+def get_refresh_token_expiry() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(
+        days=REFRESH_TOKEN_EXPIRE_DAYS
+    )
+def save_refresh_token(db: Session, user_id: int) -> str:
+    token = create_refresh_token()
+
+    db_token = RefreshToken(
+        user_id=user_id,
+        token_hash=hash_refresh_token(token),
+        expires_at=get_refresh_token_expiry(),
+    )
+
+    db.add(db_token)
+    db.commit()
+
+    return token
 def create_access_token( user_id: int, tenant_id: int, role: str )-> str:
     now = datetime.now(timezone.utc)
     payload = {

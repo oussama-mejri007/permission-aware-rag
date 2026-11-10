@@ -3,15 +3,19 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from app.auth import (create_access_token,verify_password,get_current_user,hash_password,)
+from app.auth import (create_access_token,get_current_user,hash_password,verify_password,save_refresh_token,create_refresh_token,get_refresh_token_expiry,)
 from app.database import SessionLocal, engine, create_tables
-from app.models.models import User
+from app.models.models import User, RefreshToken
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 import re
+from app.auth import hash_refresh_token
+from datetime import datetime, timezone
+from sqlalchemy import select
+from sqlalchemy import update
 
 ALLOWED_USER_ROLES = {"finance", "employee"}
 
@@ -36,11 +40,14 @@ def get_db():
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+class RefreshRequest(BaseModel):
+    refresh_token: str
 class AskRequest(BaseModel):
     question: str
 class TokenResponse(BaseModel):
     access_token: str
-    token_type: str= "bearer"
+    refresh_token: str
+    token_type: str = "bearer"
 class UserResponse(BaseModel):
     id: int
     email: EmailStr
@@ -145,9 +152,71 @@ def login(
         tenant_id=user.tenant_id,
         role=user.role,
     )
+    refresh_token = save_refresh_token(db, user.id)
 
-    return TokenResponse(access_token=token)
+    return TokenResponse(access_token=access_token,refresh_token=refresh_token,)
 
+@app.post("/auth/refresh", response_model=TokenResponse)
+def refresh_access_token(
+    payload: RefreshRequest,
+    db: Session = Depends(get_db),
+):
+    token_hash = hash_refresh_token(payload.refresh_token)
+
+    db_token = db.scalar(
+        select(RefreshToken)
+        .where(RefreshToken.token_hash == token_hash)
+        .with_for_update()
+    )
+
+    now = datetime.now(timezone.utc)
+
+    if (
+        db_token is None
+        or db_token.revoked_at is not None
+        or db_token.expires_at <= now
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    user = db.get(User, db_token.user_id)
+
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User authentication is no longer valid",
+        )
+
+    db_token.revoked_at = now
+
+    new_refresh_token = create_refresh_token()
+
+    db.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=hash_refresh_token(new_refresh_token),
+            expires_at=get_refresh_token_expiry(),
+        )
+    )
+
+    new_access_token = create_access_token(
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        role=user.role,
+    )
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return TokenResponse(
+        access_token=new_access_token,
+        refresh_token=new_refresh_token,
+    )
 
 @app.post("/rag/ask")
 def ask_rag(

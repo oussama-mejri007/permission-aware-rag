@@ -563,3 +563,231 @@ def test_user_creation_accepts_strong_password():
     )
 
     assert user.password == "StrongPassword123!"
+
+
+def test_refresh_token_rotates_tokens(monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    from app.models.models import RefreshToken
+
+    old_token = RefreshToken(
+        id=1,
+        user_id=20,
+        token_hash="old-hash",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        revoked_at=None,
+    )
+
+    class FakeUser:
+        id = 20
+        tenant_id = 1
+        role = "employee"
+        is_active = True
+
+    fake_user = FakeUser()
+
+    class FakeDB:
+        def __init__(self):
+            self.added = None
+            self.committed = False
+
+        def scalar(self, query):
+            return old_token
+
+        def get(self, model, user_id):
+            return fake_user
+
+        def add(self, obj):
+            self.added = obj
+
+        def commit(self):
+            self.committed = True
+
+    fake_db = FakeDB()
+
+    monkeypatch.setattr(
+        "app.main.hash_refresh_token",
+        lambda token: "old-hash",
+    )
+    monkeypatch.setattr(
+        "app.main.create_refresh_token",
+        lambda: "new-refresh-token",
+    )
+    monkeypatch.setattr(
+        "app.main.hash_refresh_token",
+        lambda token: "new-hash" if token == "new-refresh-token" else "old-hash",
+    )
+    monkeypatch.setattr(
+        "app.main.create_access_token",
+        lambda **kwargs: "new-access-token",
+    )
+
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        response = client.post(
+            "/auth/refresh",
+            json={"refresh_token": "old-refresh-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["access_token"] == "new-access-token"
+    assert response.json()["refresh_token"] == "new-refresh-token"
+    assert old_token.revoked_at is not None
+    assert fake_db.added.token_hash == "new-hash"
+    assert fake_db.committed is True
+
+
+def test_refresh_token_rejects_revoked_token(monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    from app.models.models import RefreshToken
+
+    revoked_token = RefreshToken(
+        id=1,
+        user_id=20,
+        token_hash="old-hash",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        revoked_at=datetime.now(timezone.utc),
+    )
+
+    class FakeDB:
+        def scalar(self, query):
+            return revoked_token
+
+    monkeypatch.setattr(
+        "app.main.hash_refresh_token",
+        lambda token: "old-hash",
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        response = client.post(
+            "/auth/refresh",
+            json={"refresh_token": "old-refresh-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 401
+
+
+def test_refresh_token_rejects_expired_token(monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    from app.models.models import RefreshToken
+
+    expired_token = RefreshToken(
+        id=1,
+        user_id=20,
+        token_hash="old-hash",
+        expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+        revoked_at=None,
+    )
+
+    class FakeDB:
+        def scalar(self, query):
+            return expired_token
+
+    monkeypatch.setattr(
+        "app.main.hash_refresh_token",
+        lambda token: "old-hash",
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        response = client.post(
+            "/auth/refresh",
+            json={"refresh_token": "expired-refresh-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 401
+
+def test_refresh_token_rejects_unknown_token(monkeypatch):
+    class FakeDB:
+        def scalar(self, query):
+            return None
+
+    monkeypatch.setattr(
+        "app.main.hash_refresh_token",
+        lambda token: "unknown-hash",
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        response = client.post(
+            "/auth/refresh",
+            json={"refresh_token": "unknown-refresh-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 401
+
+def test_refresh_token_rejects_unknown_token(monkeypatch):
+    class FakeDB:
+        def scalar(self, query):
+            return None
+
+    monkeypatch.setattr(
+        "app.main.hash_refresh_token",
+        lambda token: "unknown-hash",
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        response = client.post(
+            "/auth/refresh",
+            json={"refresh_token": "unknown-refresh-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 401
+
+def test_refresh_token_rejects_inactive_user(monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    from app.models.models import RefreshToken
+
+    valid_token = RefreshToken(
+        id=1,
+        user_id=20,
+        token_hash="old-hash",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        revoked_at=None,
+    )
+
+    class FakeUser:
+        id = 20
+        tenant_id = 1
+        role = "employee"
+        is_active = False
+
+    class FakeDB:
+        def scalar(self, query):
+            return valid_token
+
+        def get(self, model, user_id):
+            return FakeUser()
+
+    monkeypatch.setattr(
+        "app.main.hash_refresh_token",
+        lambda token: "old-hash",
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        response = client.post(
+            "/auth/refresh",
+            json={"refresh_token": "old-refresh-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 401
