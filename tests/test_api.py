@@ -2,6 +2,8 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.main import get_current_user, get_db
+from app.main import get_admin_user
+from app.main import get_authenticated_user
 
 
 client = TestClient(app)
@@ -107,3 +109,58 @@ def test_login_rejects_inactive_user(monkeypatch):
         assert False, "Expected HTTPException"
     except HTTPException as exc:
         assert exc.status_code == 401
+
+def test_users_endpoint_rejects_non_admin():
+    class FakeUser:
+        id = 10
+        tenant_id = 1
+        role = "employee"
+        is_active = True
+
+    app.dependency_overrides[get_authenticated_user] = lambda: FakeUser()
+
+    try:
+        response = client.get(
+            "/users",
+            headers={"Authorization": "Bearer valid-test-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+
+def test_admin_sees_only_users_from_own_tenant():
+    class FakeUser:
+        id = 10
+        email = "admin@company-a.com"
+        role = "admin"
+        is_active = True
+
+    class FakeResult:
+        def all(self):
+            return [FakeUser()]
+
+    class FakeDB:
+        def scalars(self, query):
+            compiled_query = query.compile()
+            assert 1 in compiled_query.params.values()
+            return FakeResult()
+
+    admin = FakeUser()
+    admin.tenant_id = 1
+
+    app.dependency_overrides[get_admin_user] = lambda: admin
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    try:
+        response = client.get(
+            "/users",
+            headers={"Authorization": "Bearer valid-test-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    assert response.json()[0]["email"] == "admin@company-a.com"
+    assert "password_hash" not in response.json()[0]

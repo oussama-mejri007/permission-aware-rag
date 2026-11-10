@@ -30,6 +30,11 @@ class AskRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str= "bearer"
+class UserResponse(BaseModel):
+    id: int
+    email: EmailStr
+    role: str
+    is_active: bool
 
 
 def get_authenticated_user(
@@ -51,6 +56,17 @@ def get_authenticated_user(
         )
 
     return user
+
+def get_admin_user(
+    current_user: User = Depends(get_authenticated_user),
+) -> User:
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+
+    return current_user
 
 
 @app.get("/health")
@@ -112,3 +128,16 @@ def ask_rag(
         user_id = current_user.id,
     )
     return {"answer": answer}
+
+@app.get("/users", response_model=list[UserResponse])
+def list_users(
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    users = db.scalars(
+        select(User).where(
+            User.tenant_id == current_user.tenant_id
+        )
+    ).all()
+
+    return users
