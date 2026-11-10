@@ -1,5 +1,5 @@
 from fastapi import Depends, FastAPI, HTTPException, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+import re
 
 ALLOWED_USER_ROLES = {"finance", "employee"}
 
@@ -49,6 +50,20 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=12)
     role: str = Field(..., pattern="^(finance|employee)$")
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, value: str) -> str:
+        if not re.search(r"[a-z]", value):
+            raise ValueError("Password must contain a lowercase letter")
+        if not re.search(r"[A-Z]", value):
+            raise ValueError("Password must contain an uppercase letter")
+        if not re.search(r"\d", value):
+            raise ValueError("Password must contain a digit")
+        if not re.search(r"[^A-Za-z0-9]", value):
+            raise ValueError("Password must contain a special character")
+
+        return value
 class UserUpdate(BaseModel):
     is_active: bool
 

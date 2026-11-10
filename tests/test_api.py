@@ -530,3 +530,36 @@ def test_login_rate_limit(monkeypatch):
 
     assert all(response.status_code == 401 for response in responses[:5])
     assert responses[5].status_code == 429
+
+import pytest
+from pydantic import ValidationError
+from app.main import UserCreate
+
+
+@pytest.mark.parametrize(
+    "password",
+    [
+        "alllowercase123!",
+        "ALLUPPERCASE123!",
+        "NoDigitsHere!!",
+        "NoSpecialChar123",
+        "Short1!",
+    ],
+)
+def test_user_creation_rejects_weak_passwords(password):
+    with pytest.raises(ValidationError):
+        UserCreate(
+            email="test@example.com",
+            password=password,
+            role="employee",
+        )
+
+
+def test_user_creation_accepts_strong_password():
+    user = UserCreate(
+        email="test@example.com",
+        password="StrongPassword123!",
+        role="employee",
+    )
+
+    assert user.password == "StrongPassword123!"
