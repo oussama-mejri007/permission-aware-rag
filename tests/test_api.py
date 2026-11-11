@@ -652,15 +652,27 @@ def test_refresh_token_rejects_revoked_token(monkeypatch):
     )
 
     class FakeDB:
+        def __init__(self):
+            self.committed = False
+            self.executed = False
+
         def scalar(self, query):
             return revoked_token
+
+        def execute(self, query):
+            self.executed = True
+
+        def commit(self):
+            self.committed = True
+
+    fake_db = FakeDB()
 
     monkeypatch.setattr(
         "app.main.hash_refresh_token",
         lambda token: "old-hash",
     )
 
-    app.dependency_overrides[get_db] = lambda: FakeDB()
+    app.dependency_overrides[get_db] = lambda: fake_db
 
     try:
         response = client.post(
@@ -671,6 +683,8 @@ def test_refresh_token_rejects_revoked_token(monkeypatch):
         app.dependency_overrides.clear()
 
     assert response.status_code == 401
+    assert fake_db.executed is True
+    assert fake_db.committed is True
 
 
 def test_refresh_token_rejects_expired_token(monkeypatch):

@@ -171,11 +171,29 @@ def refresh_access_token(
 
     now = datetime.now(timezone.utc)
 
-    if (
-        db_token is None
-        or db_token.revoked_at is not None
-        or db_token.expires_at <= now
-    ):
+    if db_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    if db_token.revoked_at is not None:
+        db.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.user_id == db_token.user_id,
+                RefreshToken.revoked_at.is_(None),
+            )
+            .values(revoked_at=now)
+        )
+        db.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token reuse detected. All sessions revoked.",
+        )
+
+    if db_token.expires_at <= now:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
