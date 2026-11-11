@@ -339,6 +339,16 @@ def update_user(
             detail="Cannot modify another admin",
         )
 
+    if user.is_active and not data.is_active:
+     db.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.user_id == user.id,
+            RefreshToken.revoked_at.is_(None),
+        )
+        .values(revoked_at=datetime.now(timezone.utc))
+    )
+
     user.is_active = data.is_active
 
     db.commit()

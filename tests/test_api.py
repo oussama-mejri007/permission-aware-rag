@@ -316,6 +316,8 @@ def test_admin_can_deactivate_user():
 
         def refresh(self, user):
             pass
+        def execute(self, query):
+            pass
 
     admin = type(
         "FakeAdmin",
@@ -888,3 +890,53 @@ def test_logout_handles_already_revoked_token(monkeypatch):
 
     assert response.status_code == 200
     assert fake_db.committed is False
+
+def test_admin_deactivating_user_revokes_refresh_tokens():
+    from app.models.models import RefreshToken
+
+    class FakeUser:
+        id = 20
+        tenant_id = 1
+        email = "employee@company-a.com"
+        role = "employee"
+        is_active = True
+
+    fake_user = FakeUser()
+
+    class FakeDB:
+        executed = False
+
+        def scalar(self, query):
+            return fake_user
+
+        def execute(self, query):
+            self.executed = True
+
+        def commit(self):
+            pass
+
+        def refresh(self, user):
+            pass
+
+    fake_db = FakeDB()
+
+    admin = type(
+        "FakeAdmin",
+        (),
+        {"id": 10, "tenant_id": 1, "role": "admin", "is_active": True},
+    )()
+
+    app.dependency_overrides[get_admin_user] = lambda: admin
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        response = client.patch(
+            "/users/20",
+            json={"is_active": False},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert fake_user.is_active is False
+    assert fake_db.executed is True
