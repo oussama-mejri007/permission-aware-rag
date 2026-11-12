@@ -584,6 +584,7 @@ def test_refresh_token_rotates_tokens(monkeypatch):
         tenant_id = 1
         role = "employee"
         is_active = True
+        token_version = 0
 
     fake_user = FakeUser()
 
@@ -1013,6 +1014,7 @@ def test_change_password_success_revokes_sessions(monkeypatch):
             "id": 20,
             "password_hash": "existing-hash",
             "is_active": True,
+            "token_version": 0,
         },
     )()
 
@@ -1055,3 +1057,4 @@ def test_change_password_success_revokes_sessions(monkeypatch):
     assert fake_user.password_hash == "new-hash"
     assert fake_db.executed is True
     assert fake_db.committed is True
+    assert fake_user.token_version == 1

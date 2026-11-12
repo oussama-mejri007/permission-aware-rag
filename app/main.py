@@ -103,6 +103,7 @@ def get_authenticated_user(
         or not user.is_active
         or user.tenant_id != token_user["tenant_id"]
         or user.role != token_user["role"]
+        or user.token_version != token_user["token_version"]
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -168,6 +169,7 @@ def login(
         user_id=user.id,
         tenant_id=user.tenant_id,
         role=user.role,
+        token_version=user.token_version,
     )
     refresh_token = save_refresh_token(db, user.id)
 
@@ -240,6 +242,7 @@ def refresh_access_token(
         user_id=user.id,
         tenant_id=user.tenant_id,
         role=user.role,
+        token_version=user.token_version,
     )
 
     try:
@@ -291,6 +294,7 @@ def change_password(
         )
 
     current_user.password_hash = hash_password(data.new_password)
+    current_user.token_version += 1
 
     db.execute(
         update(RefreshToken)

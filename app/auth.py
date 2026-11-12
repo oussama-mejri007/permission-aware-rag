@@ -48,16 +48,22 @@ def save_refresh_token(db: Session, user_id: int) -> str:
     db.commit()
 
     return token
-def create_access_token( user_id: int, tenant_id: int, role: str )-> str:
+def create_access_token(
+    user_id: int,
+    tenant_id: int,
+    role: str,
+    token_version: int,
+) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
         "tenant_id": tenant_id,
-        "role":role,
-        "iat":now,
-        "exp":now + timedelta(minutes=JWT_EXPIRE_MINUTES),
+        "role": role,
+        "token_version": token_version,
+        "iat": now,
+        "exp": now + timedelta(minutes=JWT_EXPIRE_MINUTES),
     }
-    return jwt.encode(payload,get_jwt_secret(), algorithm=JWT_ALGORITHM)
+    return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 def decode_access_token(token:str) -> dict:
     return jwt.decode(
         token,get_jwt_secret(),
@@ -74,6 +80,7 @@ def get_current_user(token:str = Depends(oauth2_scheme)) -> dict:
         user_id = payload.get("sub")
         tenant_id = payload.get("tenant_id")
         role = payload.get("role")
+        token_version = payload.get("token_version")
 
         if (
             not isinstance(user_id,str)
@@ -82,12 +89,16 @@ def get_current_user(token:str = Depends(oauth2_scheme)) -> dict:
             or isinstance(tenant_id,bool)
             or not isinstance(role,str)
             or not role
+            or not isinstance(token_version, int)
+            or isinstance(token_version, bool)
+            or token_version < 0 
         ):
             raise unauthorized
         return{
             "user_id": int(user_id),
             "tenant_id": tenant_id,
             "role": role,
+            "token_version": token_version,
         }
     except(jwt.InvalidTokenError, TypeError, ValueError):
         raise unauthorized

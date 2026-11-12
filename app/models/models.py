@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import ARRAY, DateTime, ForeignKey, String, Text
+from sqlalchemy import ARRAY, DateTime, ForeignKey, String, Text, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean
@@ -57,6 +57,11 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(
     Boolean,
     default=True,
+    nullable=False,
+    )
+    token_version: Mapped[int] = mapped_column(
+    Integer,
+    default=0,
     nullable=False,
     )
 

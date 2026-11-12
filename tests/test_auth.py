@@ -29,6 +29,7 @@ def test_create_and_decode_valid_token(jwt_secret):
         user_id=1,
         tenant_id=1,
         role="admin",
+        token_version=0,
     )
 
     payload = decode_access_token(token)
@@ -42,6 +43,7 @@ def test_access_token_expires_after_configured_duration(jwt_secret):
         user_id=1,
         tenant_id=1,
         role="admin",
+        token_version=0,
     )
 
     payload = decode_access_token(token)
