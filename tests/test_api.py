@@ -940,3 +940,118 @@ def test_admin_deactivating_user_revokes_refresh_tokens():
     assert response.status_code == 200
     assert fake_user.is_active is False
     assert fake_db.executed is True
+
+def test_change_password_rejects_wrong_current_password(monkeypatch):
+    fake_user = type(
+        "FakeUser",
+        (),
+        {
+            "id": 20,
+            "password_hash": "existing-hash",
+            "is_active": True,
+        },
+    )()
+
+    monkeypatch.setattr(
+        "app.main.verify_password",
+        lambda password, hashed: False,
+    )
+
+    app.dependency_overrides[get_authenticated_user] = lambda: fake_user
+
+    try:
+        response = client.post(
+            "/auth/change-password",
+            json={
+                "current_password": "WrongPassword123!",
+                "new_password": "NewStrongPassword123!",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Current password is incorrect"
+
+def test_change_password_rejects_same_password(monkeypatch):
+    fake_user = type(
+        "FakeUser",
+        (),
+        {
+            "id": 20,
+            "password_hash": "existing-hash",
+            "is_active": True,
+        },
+    )()
+
+    monkeypatch.setattr(
+        "app.main.verify_password",
+        lambda password, hashed: True,
+    )
+
+    app.dependency_overrides[get_authenticated_user] = lambda: fake_user
+
+    try:
+        response = client.post(
+            "/auth/change-password",
+            json={
+                "current_password": "CurrentPassword123!",
+                "new_password": "CurrentPassword123!",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "New password must be different"
+
+def test_change_password_success_revokes_sessions(monkeypatch):
+    fake_user = type(
+        "FakeUser",
+        (),
+        {
+            "id": 20,
+            "password_hash": "existing-hash",
+            "is_active": True,
+        },
+    )()
+
+    class FakeDB:
+        executed = False
+        committed = False
+
+        def execute(self, query):
+            self.executed = True
+
+        def commit(self):
+            self.committed = True
+
+    fake_db = FakeDB()
+
+    monkeypatch.setattr(
+        "app.main.verify_password",
+        lambda password, hashed: True,
+    )
+    monkeypatch.setattr(
+        "app.main.hash_password",
+        lambda password: "new-hash",
+    )
+
+    app.dependency_overrides[get_authenticated_user] = lambda: fake_user
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        response = client.post(
+            "/auth/change-password",
+            json={
+                "current_password": "CurrentPassword123!",
+                "new_password": "NewStrongPassword123!",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert fake_user.password_hash == "new-hash"
+    assert fake_db.executed is True
+    assert fake_db.committed is True

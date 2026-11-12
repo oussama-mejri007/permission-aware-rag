@@ -74,6 +74,23 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     is_active: bool
 
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=12)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_strength(cls, value: str) -> str:
+        if not re.search(r"[a-z]", value):
+            raise ValueError("Password must contain a lowercase letter")
+        if not re.search(r"[A-Z]", value):
+            raise ValueError("Password must contain an uppercase letter")
+        if not re.search(r"\d", value):
+            raise ValueError("Password must contain a digit")
+        if not re.search(r"[^A-Za-z0-9]", value):
+            raise ValueError("Password must contain a special character")
+        return value
+
 
 def get_authenticated_user(
     token_user: dict = Depends(get_current_user),
@@ -254,6 +271,40 @@ def logout(
         db.commit()
 
     return {"message": "Logged out successfully"}
+
+@app.post("/auth/change-password")
+def change_password(
+    data: PasswordChange,
+    current_user: User = Depends(get_authenticated_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(data.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    if data.current_password == data.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different",
+        )
+
+    current_user.password_hash = hash_password(data.new_password)
+
+    db.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.user_id == current_user.id,
+            RefreshToken.revoked_at.is_(None),
+        )
+        .values(revoked_at=datetime.now(timezone.utc))
+    )
+
+    db.commit()
+
+    return {"message": "Password changed successfully. Please log in again."}
+
 
 @app.post("/rag/ask")
 def ask_rag(
